@@ -1,0 +1,30 @@
+{
+  "name": "@akilio/storage-mongodb",
+  "version": "1.0.1",
+  "description": "The simplest ever MongoDB object relation mapper and data access library",
+  "main": "index.js",
+  "engines": {
+    "node": ">=6"
+  },
+  "scripts": {
+    "forward": "ssh -f -N -L 27017:localhost:27017"
+  },
+  "author": "Alex Martynov <fenixdeveloper@gmail.com>",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/akil-io/storage-mongodb"
+  },
+  "bugs": {
+    "url": "https://github.com/akil-io/storage-mongodb/issues"
+  },
+  "keywords": [
+    "orm",
+    "odm",
+    "dao",
+    "mongodb"
+  ],
+  "license": "MIT",
+  "dependencies": {
+    "mongodb": "^3.3.3"
+  }
+}
