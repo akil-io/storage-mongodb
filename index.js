@@ -1,189 +1,168 @@
-const MongoClient = require('mongodb').MongoClient;
-const assert = require('assert');
+const { MongoClient } = require("mongodb");
 const ObjectID = require('mongodb').ObjectID;
+const _ = require("lodash");
+const {Schema} = require('object-constructor');
 
 class MongoDB {
 	constructor(settings) {
 		this.settings = Object.assign({}, {
-			url: "mongodb://localhost:27017",
+			url: "mongodb+srv://localhost:27017",
       		dbName: "test"
 		}, settings);
+
 		this.client = null;
 		this.db = null;
 	}
-	connect() {
-		return new Promise((resolve, reject) => {
-			MongoClient.connect(this.settings.url, {
-		      useNewUrlParser: true,
-		      useUnifiedTopology: true
-		    }, (err, client) => {
-		      assert.equal(null, err);
 
-		      this.client = client;
-		      this.db = client.db(this.settings.dbName);
-		      resolve(this);
-		  });
-		});
+	async connect() {
+		this.client = new MongoClient(this.settings.url);
+		await this.client.connect();
+		this.db = this.client.db(this.settings.dbName);
+		await this.db.command({ ping: 1 });
 	}
+
 	bindModel(model, idKey = '_id') {
 		let storage = this;
+		let context = this.getModel(model, idKey);
 
 		model.get = function (id) {
-			return storage.getByID(model, id);
+			return storage.get(context, id);
 		};
-		model.find = function (filters) {
-			return storage.find(model, filters);
+		model.find = function (filter) {
+			return storage.find(context, filter);
 		};
-		model.clear = async function (filters = {}) {
-			let result = await storage.clear(model, filters, true);
-			return (result.deletedCount > 0);
+		model.clear = async function (filter = {}) {
+			return storage.clear(context, filter, true);
 		};
+		model.nextID = function () { 
+			return storage.nextID(context); 
+		}
 
 		model.prototype.save = async function () {
-			try {
-				let result = await storage.save(model, Object.assign({}, this));
-				if (result[idKey] != undefined) {
-					Object.assign(this, result);
-				}
-				return this;
-			} catch (err) {
-				throw err;
+			let data = this.toObject ? this.toObject() : Object.assign({}, this);
+			let result = await storage.save(context, data);
+			if (result) {
+				this[idKey] = result;
 			}
+
+			return this;
 		};
 		model.prototype.remove = async function () {
-			let result = await storage.remove(model, this[idKey], true);
-			return (result.deletedCount == 1);
+			return storage.remove(context, this[idKey], true);
 		};
 
 		return model;
 	}
 
-	combineFilters(filters = []) {
-		if (filters['length'] === undefined) filters = [filters];		
-		return Object.assign({}, ...filters);
-	}
-
 	error(code) {
 		return new Error(code);
 	}
-	getModel(model) {
+	getModel(model, idKey) {
 		return {
-			name: model.name.toLowerCase(),
-			cls: model
+			name: model.constructor.collection || model.name.toLowerCase(),
+			cls: model,
+			idKey
 		};
 	}
-	getNewID(name) {
+	nextID(name) {
 		return new ObjectID();
 	}
 
-	save(model, data) {
-		return new Promise((resolve, reject) => {
-			model = this.getModel(model);
-			const collection = this.db.collection(model.name);
-
-			if (!data._id) {
-				//insert
-	            collection.insertOne(data).then(result => {
-	            	if (result.result.n == 1 && result.ops.length == 1) {
-		              resolve(result.ops.pop());
-		            } else reject(this.error("NOT_SAVED"));
-	            })
-			} else {
-				//update
-				collection.findOne({ _id : new ObjectID(data._id) }).then(item => {
-					//console.log('FOUND: ', item);
-					if (!item) return reject(this.error("NOT_FOUND"));
-					let patch = Object.assign({}, Object.keys(data).reduce((a, c) => { if (c !== '_id') { a[c] = data[c]; } return a; }, {}), {
-						_updated: new Date()
-					});
-					collection.updateOne({
-						_id: new ObjectID(data._id)
-					}, {
-						$set: patch
-					}).then(result => {
-						if (result.matchedCount == result.modifiedCount && result.modifiedCount == 1) {
-							resolve(data);
-						} else {
-							//console.log('CAN NOT SAVE: ' + data._id, patch);
-							resolve({
-								_id: data._id
-							});
-						}
-					}).catch(error => {
-						console.log('UPDATE ERROR:', error);
-						reject(error);
-					})
-				}).catch(error => {
-					console.log("ERROR: ", error);
-					reject(error);
-				});
-			}
-		});
-	}
-	remove(model, id, isFinal) {
-		model = this.getModel(model);
-
+	async save(model, data) {
 		const collection = this.db.collection(model.name);
-      	return collection.deleteOne({ _id : new ObjectID(id) });
+		if (!data[model.idKey]) {
+			let result = await collection.insertOne(data);
+			if (result && result.insertedId) {
+				return result.insertedId;
+			} else {
+				throw this.error("insert_failed");
+			}
+		} else {
+			let patch = _.omit(data, [model.idKey]);
+			let result = await collection.updateOne({
+				[model.idKey]: new ObjectID(data[model.idKey])
+			}, {
+				$set: patch
+			});
+			if (result.matchedCount === result.modifiedCount 
+				&& result.modifiedCount === 1) {
+				return data[model.idKey];
+			} else {
+				throw this.error("update_failed");
+			}
+		}
 	}
-	find(model, filters) {
-		return new Promise((resolve, reject) => {
-			model = this.getModel(model);
-			let filter = this.combineFilters(filters);
-			const collection = this.db.collection(model.name);
 
-			const getAll = async function () {
-				let items = await collection.find(filter).toArray();
+	async remove(model, id) {
+		const collection = this.db.collection(model.name);
+      	let result = await collection.deleteOne({ _id : new ObjectID(id) });
+      	if (result.deletedCount === 1) {
+      		return true;
+      	} else {
+      		throw this.error("remove_failed");
+      	}
+	}
+
+	async count(model, filter = {}) {
+		const collection = this.db.collection(model.name);
+		if (_.isEmpty(filter)) {
+			return await collection.estimatedDocumentCount();
+		} else {
+			return await collection.countDocuments(filter)
+		}
+	}
+
+	find(model, filter = {}, options = {}) {
+		const collection = this.db.collection(model.name);
+
+		let query = {};
+		Schema.define(query, [
+			Schema.readonly('count', async () => this.count(model, filter)),
+			Schema.readonly('getAll', async () => {
+				let items = await collection.find(filter, options).toArray();
 				return items.map(item => new model.cls(item));
-			};
-			const getPage = async function (page, limit) {
+			}),
+			Schema.readonly('getPage', async () => {
 				let items = await collection
-						.find(filter)
-						.skip((page - 1) * limit)
-						.limit(limit)
-						.toArray();
+					.find(filter, options)
+					.skip((page - 1) * limit)
+					.limit(limit)
+					.toArray();
 				return items.map(item => new model.cls(item));
-			};
-			const each = async function* (count, limit) {
+			}),
+			Schema.readonly('each', async function* () {
 				for (let curPage = 1; curPage <= Math.ceil(count / 10); curPage++) {
-					let items = await getPage(curPage, limit);
-					for (let item of items) {
-						yield item;
+					let cursor = await collection.find(filter);
+					while (await cursor.hasNext()) {
+					    let item = await cursor.next();
+					    yield {
+					    	item,
+					    	rewind: () => cursor.rewind(),
+					    	close: () => cursor.close()
+					    };
 					}
 				}
-			};
+			}, false),
+		]);
 
-			collection.countDocuments(filter).then(count => {
-				resolve({
-					count,
-					getAll,
-					getPage,
-					each
-				});
-          	});
-		});
+		return query;
 	}
-	getByID(model, id) {
+	get(model, id) {
 		return new Promise((resolve, reject) => {
-			model = this.getModel(model);
-
 			const collection = this.db.collection(model.name);
 
 	      	return collection.findOne({ _id : new ObjectID(id) }).then(item => resolve(item ? (new model.cls(item)) : null));
   		});
 	}
-	clear(model, filters, isFinal) {
-		model = this.getModel(model);
-		let filter = this.combineFilters(filters);
-
+	async clear(model, filter = {}) {
 		const collection = this.db.collection(model.name);
-		return collection.deleteMany(filter);	
+		let result = await collection.deleteMany(filter);	
+		return (result.deletedCount > 0);
 	}
 
 	static async init(settings = {}, models = []) {
-		let mongo = new MongoDB(settings);
-
-		let db = await mongo.connect();
+		let db = new MongoDB(settings);
+		await db.connect();
 
 		for (let model of models) db.bindModel(model);
 

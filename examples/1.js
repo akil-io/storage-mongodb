@@ -1,9 +1,10 @@
 const { MongoDB } = require("../index.js");
 
-const host = 'localhost:27017';
-const login = '<login>';
-const password = '<password>';
-const dbname = '<dbname>';
+const host = 'localhost:27017' || process.env.DB_ADDR;
+const login = '<login>' || process.env.DB_LOGIN;
+const password = '<password>' || process.env.DB_PASS;
+const dbname = '<dbname>' || process.env.DB_NAME;
+const url = process.env.DB_URL || `mongodb://${login}:${password}@${host}/${dbname}`;
 
 class Profile {
 	constructor(fields) {
@@ -18,7 +19,7 @@ class Profile {
 
 (async () => {
 	let db = await MongoDB.init({
-		url: `mongodb://${login}:${password}@${host}/${dbname}`,
+		url: url,
 		dbName: dbname
 	}, [Profile]);
 
@@ -40,7 +41,7 @@ class Profile {
 	console.log("saved profile: ", p2);
 
 	console.log("deleted: ", await p2.remove());
-	console.log("Stored in DB: ", (await Profile.find({})).count);
+	console.log("Stored in DB: ", await Profile.find({}).count());
 
 })().then(() => {
 	console.log('Complete.');
