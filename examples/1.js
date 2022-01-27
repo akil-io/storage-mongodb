@@ -1,4 +1,4 @@
-const { MongoDB } = require("../index.js");
+const { MongoDB, Query } = require("../index");
 
 const host = 'localhost:27017' || process.env.DB_ADDR;
 const login = '<login>' || process.env.DB_LOGIN;
@@ -14,6 +14,13 @@ class Profile {
 		this.password = "";
 
 		Object.assign(this, fields);
+	}
+
+	static async auth(login, password) {
+		return Query()
+			.isEqual('email', login)
+			.isEqual('password', password)
+			.exec(this).getOne();
 	}
 }
 
@@ -34,11 +41,14 @@ class Profile {
 	await p.save();
 	console.log('Saved with ID: ', p._id);
 
-	let list = await (await Profile.find({})).getAll();
+	let list = await Profile.find().getAll();
 	console.log(list);
 
 	let p2 = await Profile.get(p._id);
 	console.log("saved profile: ", p2);
+
+	let p3 = await Profile.auth("test@test.ru", "testingpas");
+	console.log("found with query: ", p3);
 
 	console.log("deleted: ", await p2.remove());
 	console.log("Stored in DB: ", await Profile.find({}).count());
