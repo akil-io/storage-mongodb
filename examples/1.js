@@ -17,10 +17,10 @@ class Profile {
 	}
 
 	static async auth(login, password) {
-		return Query()
+		return Query(this)
 			.isEqual('email', login)
 			.isEqual('password', password)
-			.exec(this).getOne();
+			.getOne();
 	}
 }
 

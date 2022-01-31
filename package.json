@@ -1,13 +1,14 @@
 {
   "name": "@akilio/storage-mongodb",
-  "version": "2.1.0",
+  "version": "2.2.1",
   "description": "The simplest ever MongoDB object relation mapper and data access library",
   "main": "index.js",
   "engines": {
     "node": ">=6"
   },
   "scripts": {
-    "forward": "ssh -f -N -L 27017:localhost:27017"
+    "forward": "ssh -f -N -L 27017:localhost:27017",
+    "test": "mocha"
   },
   "author": "Alex Martynov <fenixdeveloper@gmail.com>",
   "repository": {
@@ -28,5 +29,8 @@
     "lodash": "^4.17.21",
     "mongodb": "^4.3.1",
     "object-constructor": "^2.0.0"
+  },
+  "devDependencies": {
+    "mocha": "^9.2.0"
   }
 }
