@@ -1,6 +1,6 @@
 {
   "name": "@akilio/storage-mongodb",
-  "version": "2.2.1",
+  "version": "2.2.2",
   "description": "The simplest ever MongoDB object relation mapper and data access library",
   "main": "index.js",
   "engines": {
